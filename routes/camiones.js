@@ -297,5 +297,4 @@ router.get('/:id/estado-iot', async (req, res, next) => {
   }
 });
 
-
 module.exports = router;

@@ -76,74 +76,29 @@ router.get('/:id', async (req, res, next) => {
 
 // Crear un nuevo conductor
 router.post('/', async (req, res) => {
-  const { nombre, telefono, calle, colonia, numero_int, numero_ext, correo, tipo = 2, password } = req.body;
+  const { nombre, telefono, calle, colonia, numero_int, numero_ext, correo, password } = req.body;
 
   try {
-    // Validación básica
-    const requiredFields = ['nombre', 'telefono', 'calle', 'colonia', 'numero_ext', 'correo', 'password'];
-    const missingFields = requiredFields.filter(field => !req.body[field]);
-    
-    if (missingFields.length > 0) {
-      return res.status(400).json({ 
-        error: 'Faltan campos obligatorios',
-        missingFields 
-      });
+    // Llamar al procedimiento unificado
+    const { rows: [result] } = await db.query(
+      'CALL registrar_conductor_usuario($1, $2, $3, $4, $5, $6, $7, $8, NULL)',
+      [nombre, telefono, calle, colonia, numero_int || null, numero_ext, correo, password]
+    );
+
+    if (result.p_resultado.success) {
+      res.status(201).json(result.p_resultado);
+    } else {
+      res.status(400).json(result.p_resultado);
     }
-
-    // Iniciar transacción
-    await db.query('BEGIN');
-
-    // 1. Registrar usuario
-    const { rows: usuarioResult } = await db.query(
-      'CALL registrar_usuario($1, $2, $3, $4, NULL)',
-      [nombre, correo, tipo, password]
-    );
-    
-    // Obtener ID del usuario creado
-    const { rows: [usuario] } = await db.query(
-      'SELECT id FROM usuarios WHERE correo = $1', 
-      [correo]
-    );
-
-    // 2. Registrar conductor
-    await db.query(
-      'CALL registrar_conductor($1, $2, $3, $4, $5, $6, $7)',
-      [nombre, telefono, calle, colonia, numero_int || null, numero_ext, usuario.id]
-    );
-
-    // Confirmar transacción
-    await db.query('COMMIT');
-
-    res.status(201).json({ 
-      success: true,
-      message: 'Registro completado exitosamente',
-      usuario_id: usuario.id
-    });
-
   } catch (error) {
-    // Revertir transacción en caso de error
-    await db.query('ROLLBACK');
-    
     console.error('Error en el registro:', error);
-    
-    // Manejo de errores específicos
-    let errorMessage = 'Error en el servidor';
-    if (error.code === '23505') { // Violación de unique constraint
-      if (error.constraint === 'usuarios_correo_key') {
-        errorMessage = 'El correo electrónico ya está registrado';
-      } else if (error.constraint === 'conductores_usuario_id_key') {
-        errorMessage = 'El usuario ya tiene un conductor asociado';
-      }
-    }
-    
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      error: errorMessage,
+      error: 'Error en el servidor',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
-
 
 // Actualizar un conductor
 router.put('/:id', async (req, res, next) => {
@@ -227,7 +182,5 @@ router.delete('/:id', async (req, res, next) => {
     next(error);
   }
 });
-
-
 
 module.exports = router;
